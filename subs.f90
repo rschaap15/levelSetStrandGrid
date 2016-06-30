@@ -9,6 +9,191 @@ MODULE set_subs
 IMPLICIT NONE
 
 CONTAINS
+!*************************************************************************************!
+! Generate Strands
+!*************************************************************************************!
+SUBROUTINE strandGen(triangles,nTri,nSurfNode,normals,clip,strandDist,wSpace,smooth,nodeNormals)
+REAL*4,DIMENSION(:,:),INTENT(IN) :: triangles,normals
+INTEGER,INTENT(IN) :: nTri,clip,strandDist
+INTEGER,INTENT(INOUT) :: nSurfNode
+REAL,INTENT(IN) :: wSpace,smooth
+
+INTEGER :: n,i,k,kk,p,share
+INTEGER,DIMENSION(nSurfNode) :: nSurT,nNum   !! Number of Surrounding Triangles, Node Number
+INTEGER*4,DIMENSION(nTri,3) :: surfElem      !! Tag for surface nodes
+REAL*4,DIMENSION(3,nTri*5)  :: nodesT        !! Node Locations
+REAL*4,DIMENSION(3,nTri),INTENT(OUT) :: nodeNormals   !! Cumulative area for surrounding triangles
+
+!! Determine surface nodes, and shared nodes from triangles
+
+nSurT = 1
+nodeNormals  = 0.
+
+i = 1
+nSurfNode = 3
+k = 0;
+DO n = 1,ntri
+   DO p = 1,3
+      share = 0 
+      DO kk = 1,nSurfNode
+         IF ((abs(nodesT(1,kk) - triangles(1,i)) < 1.e-13) .AND. &
+             (abs(nodesT(2,kk) - triangles(2,i)) < 1.e-13) .AND. &
+             (abs(nodesT(3,kk) - triangles(3,i)) < 1.e-13)) THEN
+            share = kk
+            nSurT(kk) = nSurT(kk) + 1
+            nodeNormals(:,kk) = nodeNormals(:,kk) + normals(:,kk)
+            EXIT
+         END IF
+      END DO
+      IF (share > 0) THEN
+         surfElem(n,p) = share
+      ELSE
+         k             = k+1 
+         nodesT(:,k)   = triangles(:,i)
+         surfElem(n,p) = k !1-based
+      END IF
+      i = i+1
+   END DO
+   nSurfNode = k 
+END DO
+
+nodeNormals(:,:) = nodeNormals(:,:)/(sqrt(nodeNormals(:,:)*nodeNormals(:,:)))
+
+END SUBROUTINE strandGen
+
+!*************************************************************************************!
+! Output to VTS file using the following subroutine
+!*************************************************************************************!
+SUBROUTINE output_vtk(nx,Dat,output_filename)
+    !INTEGER,DIMENSION(:),INTENT(IN)::dims
+    INTEGER,DIMENSION(:),INTENT(IN):: nx
+    CHARACTER(LEN=*),INTENT(IN)  ::  output_filename
+    INTEGER,INTENT(IN)  ::  rank
+    TYPE (SET),DIMENSION(-1:,-1:,-1:),INTENT(IN) :: Dat
+    CHARACTER(LEN=1024) ::  output_filename_rank,output_folder,cmd
+    INTEGER :: E_IO
+    INTEGER :: nnx1,nnx2,nny1,nny2,nnz1,nnz2
+
+    output_folder = 'output/' // trim(output_filename) // '/'
+    cmd = 'mkdir -p ' // trim(output_folder)
+    CALL SYSTEM(trim(cmd))
+    
+    
+    IF (rank < 10) THEN
+        WRITE(output_filename_rank,'(A,A,I1,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
+    ELSE IF (rank >=10 .AND. rank<100) THEN
+        WRITE(output_filename_rank,'(A,A,I2,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
+    ELSE IF (rank >=100 .AND. rank<1000) THEN
+        WRITE(output_filename_rank,'(A,A,I3,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
+    ELSE 
+        WRITE(*,*) 'error in putting output_filename with this rank',rank
+    END IF
+    ! output to vtk files
+        nnx1 = (coords(1))*nx(1) + coords(1)-1
+        nnx2 = (coords(1)+1)*nx(1) + coords(1)
+
+        nny1 = (coords(2))*nx(2) + coords(2) - 1
+        nny2 = (coords(2)+1)*nx(2) + coords(2)
+
+        nnz1 = (coords(3))*nx(3) + coords(3) - 1
+        nnz2 = (coords(3)+1)*nx(3) + coords(3)
+    WRITE(*,*) 'Writing file ',trim(output_filename_rank)
+    E_IO = VTK_INI_XML_write(fformat='binary', filename=trim(output_filename_rank),mesh_topology='UnstructuredGrid')
+    E_IO = VTK_FLD_XML(fld_action='open')
+    E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
+    E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
+    E_IO = VTK_FLD_XML(fld_action='close')
+    E_IO = VTK_GEO_XML_WRITE(& 
+        nx1=nnx1        ,&
+        nx2=nnx2        ,&
+        ny1=nny1        ,&
+        ny2=nny2        ,&
+        nz1=nnz1        ,&
+        nz2=nnz2        ,&
+        NN=INT((nx(1)+2)*(nx(2)+2)*(nx(3)+2)),&
+        X=Dat%x         ,&
+        Y=Dat%y         ,&
+        Z=Dat%z)
+    E_IO = VTK_DAT_XML(var_location='node',var_block_action='open')
+    E_IO = VTK_VAR_XML(             &
+        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
+        varname='Phi'              ,&
+        var=Dat%phi)
+    E_IO = VTK_VAR_XML(             &
+        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
+        varname='gradPhiX'         ,&
+        var=Dat%gradPhiX)
+    E_IO = VTK_VAR_XML(             &
+        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
+        varname='gradPhiY'         ,&
+        var=Dat%gradPhiY)
+    E_IO = VTK_VAR_XML(             &
+        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
+        varname='gradPhiZ'         ,&
+        var=Dat%gradPhiZ)
+    E_IO = VTK_DAT_XML(var_location='node',var_block_action='close')
+    E_IO = VTK_GEO_XML_WRITE()
+    E_IO = VTK_END_XML()
+END SUBROUTINE output_vtk
+
+
+!*************************************************************************************!
+! Input.namelist readfile
+!*************************************************************************************!
+SUBROUTINE InputRead(&
+        rank    ,&
+        filename,&
+        meshfile,&
+        dx      ,&
+        CFL     ,&
+        dd      ,&
+        tol     ,&
+        h       ,&
+        nPass   ,&
+        iter    ,&
+        order1  ,&
+        order2  ,&
+        orderUp ,&
+        convergenceLimit,&
+        solutionType&
+        )
+    INTEGER ,INTENT(IN)     :: rank
+    CHARACTER(*),INTENT(IN) :: filename
+    CHARACTER(*),INTENT(OUT):: meshfile
+
+    REAL                    ,INTENT(OUT)    :: dx,tol,CFL
+    REAL    ,DIMENSION(3)   ,INTENT(OUT)    :: h,convergenceLimit
+    INTEGER                 ,INTENT(OUT)    :: nPass,dd,order2,solutionType
+    INTEGER ,DIMENSION(3)   ,INTENT(OUT)    :: iter,order1,orderUp
+    INTEGER                 ,PARAMETER      :: iUnit=9
+
+    NAMELIST/LEVELSET_SA/&
+        meshfile,&
+        dx      ,&
+        CFL     ,&
+        dd      ,&
+        tol     ,&
+        h       ,&
+        nPass   ,&
+        iter    ,&
+        order1  ,&
+        order2  ,&
+        orderUp ,&
+        convergenceLimit ,&
+        solutionType
+
+    OPEN(iUnit,FILE=TRIM(filename),STATUS='old')
+    READ(iUnit,LEVELSET_SA)
+    CLOSE(iUnit)
+
+    IF (rank == 0) THEN
+        WRITE(*,*)
+        WRITE(*,LEVELSET_SA)
+        WRITE(*,*)
+    END IF
+
+END SUBROUTINE InputRead
+
 
 !*************************************************************************************!
 ! Read STL and Allocate

@@ -1,0 +1,9 @@
+*
+
+!.gitignore
+!*.f90
+!README*
+!LICENSE
+!*.stl
+!/Lib_VTK_IO/
+!*.namelist
