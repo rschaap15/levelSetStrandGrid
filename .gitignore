@@ -2,6 +2,7 @@
 
 !.gitignore
 !*.f90
+!*.F
 !README*
 !LICENSE
 !*.stl
