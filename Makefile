@@ -7,7 +7,7 @@ FFILE=set3d
 #FLAGS=-Wall -Wextra -Wconversion -fcheck='all' -ffixed-line-length-none -fdefault-real-8 -O3 -J ./Lib_VTK_IO/mod/
 FLAGS=-ffixed-line-length-none -fdefault-real-8 -J ./Lib_VTK_IO/mod/
 #STLFILE=twoCube10.stl
-STLFILE=cube5.stl
+STLFILE=cube40.stl
 #STLFILE=Ellipsoid2_coarse.stl
 VTUFILE=test.vtu
 

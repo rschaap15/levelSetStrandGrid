@@ -78,7 +78,7 @@ cellT = 5
 ALLOCATE(offS(nCell))
 
 DO n = 1,nCell
-    offS(n) = 3*n-1
+    offS(n) = 3*n
 END DO
 
         WRITE(*,*) 'Writing file mesh.vtu'
@@ -231,12 +231,12 @@ DO n = 1,ntri
       END DO
       IF (share > 0) THEN
          surfElem(n,p) = share
-         conn((n-1)*3+p) = share !connectivity for surface mesh
+         conn((n-1)*3+p) = share-1 !connectivity for surface mesh
       ELSE
          k               = k+1 
          nodesT(:,k)     = triangles(:,i)
          surfElem(n,p)   = k !1-based
-         conn((n-1)*3+p) = k !connectivity for surface mesh
+         conn((n-1)*3+p) = k-1 !connectivity for surface mesh
       END IF
       i = i+1
    END DO
