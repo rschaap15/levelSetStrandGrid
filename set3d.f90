@@ -15,6 +15,7 @@ PROGRAM set3d
 !*************************************************************************************!
 
 USE set_subs
+USE Lib_VTK_IO
 
 IMPLICIT NONE
 
@@ -39,6 +40,8 @@ REAL,ALLOCATABLE,DIMENSION(:,:) :: centroid,surfX,bndNormal,gradPhiSurf,surfXN,s
 CHARACTER(LEN=1) :: lf=char(10)
 CHARACTER(LEN=1024) :: extent,origin,spacing,coffset
 INTEGER*4,ALLOCATABLE,DIMENSION(:,:) :: surfElem
+INTEGER,ALLOCATABLE,DIMENSION(:)   :: conn
+INTEGER,ALLOCATABLE,DIMENSION(:)   :: offS_mesh
 INTEGER,ALLOCATABLE,DIMENSION(:) :: surfElemTag,surfOrder
 CHARACTER :: filename*80,meshname*80,endname*80,filetype*80
 INTEGER*4 :: nSurfNode,k,i,n,p,kk,share,nSurfElem,length
@@ -65,7 +68,9 @@ IF (filetype == 'stl') THEN
    ! remove filetyple and add .s3d
    meshname = filename(1:length-len_trim(filetype)-1)//endname
 
-   CALL stlRead(surfX,nSurfNode,surfElem,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
+   CALL stlRead(surfX,nSurfNode,surfElem,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
+
+   CALL output_mesh(nSurfElem,nSurfNode,surfX(:,1),surfX(:,2),surfX(:,3),conn,offS_mesh)
 
 ELSEIF (filetype == 's3d') THEN
 

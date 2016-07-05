@@ -1,5 +1,6 @@
 MODULE set_subs
 
+USE Lib_VTK_IO
 !*************************************************************************************!
 !
 ! Module containing subroutines for set3d.f90
@@ -64,77 +65,38 @@ END SUBROUTINE strandGen
 !*************************************************************************************!
 ! Output to VTS file using the following subroutine
 !*************************************************************************************!
-SUBROUTINE output_vtk(nx,Dat,output_filename)
-    !INTEGER,DIMENSION(:),INTENT(IN)::dims
-    INTEGER,DIMENSION(:),INTENT(IN):: nx
-    CHARACTER(LEN=*),INTENT(IN)  ::  output_filename
-    INTEGER,INTENT(IN)  ::  rank
-    TYPE (SET),DIMENSION(-1:,-1:,-1:),INTENT(IN) :: Dat
-    CHARACTER(LEN=1024) ::  output_filename_rank,output_folder,cmd
-    INTEGER :: E_IO
-    INTEGER :: nnx1,nnx2,nny1,nny2,nnz1,nnz2
+SUBROUTINE output_mesh(nCell,nNode,x_loc,y_loc,z_loc,conn,offS)
+INTEGER :: nCell,nNode
+REAL,INTENT(IN),DIMENSION(:) :: x_loc, y_loc, z_loc
+INTEGER,INTENT(IN),DIMENSION(:) :: conn
+INTEGER,ALLOCATABLE,INTENT(INOUT),DIMENSION(:) :: offS
+INTEGER*1,DIMENSION(nCell) :: cellT
+INTEGER :: E_IO
+INTEGER :: n
 
-    output_folder = 'output/' // trim(output_filename) // '/'
-    cmd = 'mkdir -p ' // trim(output_folder)
-    CALL SYSTEM(trim(cmd))
-    
-    
-    IF (rank < 10) THEN
-        WRITE(output_filename_rank,'(A,A,I1,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
-    ELSE IF (rank >=10 .AND. rank<100) THEN
-        WRITE(output_filename_rank,'(A,A,I2,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
-    ELSE IF (rank >=100 .AND. rank<1000) THEN
-        WRITE(output_filename_rank,'(A,A,I3,A4)') trim(output_folder),trim(output_filename),rank,'.vts'
-    ELSE 
-        WRITE(*,*) 'error in putting output_filename with this rank',rank
-    END IF
-    ! output to vtk files
-        nnx1 = (coords(1))*nx(1) + coords(1)-1
-        nnx2 = (coords(1)+1)*nx(1) + coords(1)
+cellT = 5
+ALLOCATE(offS(nCell))
 
-        nny1 = (coords(2))*nx(2) + coords(2) - 1
-        nny2 = (coords(2)+1)*nx(2) + coords(2)
+DO n = 1,nCell
+    offS(n) = 3*n-1
+END DO
 
-        nnz1 = (coords(3))*nx(3) + coords(3) - 1
-        nnz2 = (coords(3)+1)*nx(3) + coords(3)
-    WRITE(*,*) 'Writing file ',trim(output_filename_rank)
-    E_IO = VTK_INI_XML_write(fformat='binary', filename=trim(output_filename_rank),mesh_topology='UnstructuredGrid')
-    E_IO = VTK_FLD_XML(fld_action='open')
-    E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
-    E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
-    E_IO = VTK_FLD_XML(fld_action='close')
-    E_IO = VTK_GEO_XML_WRITE(& 
-        nx1=nnx1        ,&
-        nx2=nnx2        ,&
-        ny1=nny1        ,&
-        ny2=nny2        ,&
-        nz1=nnz1        ,&
-        nz2=nnz2        ,&
-        NN=INT((nx(1)+2)*(nx(2)+2)*(nx(3)+2)),&
-        X=Dat%x         ,&
-        Y=Dat%y         ,&
-        Z=Dat%z)
-    E_IO = VTK_DAT_XML(var_location='node',var_block_action='open')
-    E_IO = VTK_VAR_XML(             &
-        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
-        varname='Phi'              ,&
-        var=Dat%phi)
-    E_IO = VTK_VAR_XML(             &
-        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
-        varname='gradPhiX'         ,&
-        var=Dat%gradPhiX)
-    E_IO = VTK_VAR_XML(             &
-        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
-        varname='gradPhiY'         ,&
-        var=Dat%gradPhiY)
-    E_IO = VTK_VAR_XML(             &
-        NC_NN=(nx(1)+2)*(nx(2)+2)*(nx(3)+2) ,&
-        varname='gradPhiZ'         ,&
-        var=Dat%gradPhiZ)
-    E_IO = VTK_DAT_XML(var_location='node',var_block_action='close')
-    E_IO = VTK_GEO_XML_WRITE()
-    E_IO = VTK_END_XML()
-END SUBROUTINE output_vtk
+        WRITE(*,*) 'Writing file mesh.vtu'
+        E_IO = VTK_INI_XML_write(fformat='binary', filename='test.vtu',mesh_topology='UnstructuredGrid')
+        E_IO = VTK_FLD_XML(fld_action='open')
+        E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
+        E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
+        E_IO = VTK_FLD_XML(fld_action='close')
+        E_IO = VTK_GEO_XML_WRITE(nNode,nCell,x_loc,y_loc,z_loc)
+        E_IO = VTK_CON_XML(&
+            NC        = nCell     ,&
+            connect   = conn      ,&
+            offset    = offS      ,&
+            cell_type = cellT     )
+        E_IO = VTK_GEO_XML_WRITE()
+        E_IO = VTK_END_XML()
+
+END SUBROUTINE output_mesh
 
 
 !*************************************************************************************!
@@ -199,7 +161,7 @@ END SUBROUTINE InputRead
 ! Read STL and Allocate
 !*************************************************************************************!
 
-SUBROUTINE stlRead(surfX,nSurfNode,surfElem,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
+SUBROUTINE stlRead(surfX,nSurfNode,surfElem,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
 
 CHARACTER header*80
 CHARACTER, INTENT(IN) :: filename*80
@@ -207,6 +169,7 @@ INTEGER*2 padding
 INTEGER*4 ntri,iunit,nSurfNode,k,i,n,p,kk,share,nSurfElem
 REAL*4,ALLOCATABLE,DIMENSION(:,:) :: normals,triangles,nodesT
 INTEGER*4,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: surfElem
+INTEGER*4,ALLOCATABLE,DIMENSION(:),INTENT(OUT) :: conn 
 REAL,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: surfX
 INTEGER,ALLOCATABLE,DIMENSION(:),INTENT(OUT) :: surfElemTag,surfOrder
 REAL,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: bndNormal
@@ -226,6 +189,7 @@ READ(iunit) ntri
 ALLOCATE(normals(3,ntri))
 ALLOCATE(triangles(3,ntri*3))
 ALLOCATE(surfELem(ntri,3))
+ALLOCATE(conn(ntri*3))
  
 ! read .stl data
 k=1
@@ -267,10 +231,12 @@ DO n = 1,ntri
       END DO
       IF (share > 0) THEN
          surfElem(n,p) = share
+         conn((n-1)*3+p) = share !connectivity for surface mesh
       ELSE
-         k             = k+1 
-         nodesT(:,k)   = triangles(:,i)
-         surfElem(n,p) = k !1-based
+         k               = k+1 
+         nodesT(:,k)     = triangles(:,i)
+         surfElem(n,p)   = k !1-based
+         conn((n-1)*3+p) = k !connectivity for surface mesh
       END IF
       i = i+1
    END DO
