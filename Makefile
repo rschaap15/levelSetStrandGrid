@@ -1,6 +1,6 @@
 OBJS = \
-	subs.o\
-	#sfuns.o
+	subs.o \
+	sfuns.o
 FFILE=set3d
 #FLAGS=-O3 -fdefault-real-8
 #FLAGS=-Wall -fcheck='all' -ffixed-line-length-none -fdefault-real-8 -O3 -J./Lib_VTK_IO/mod/
@@ -14,7 +14,6 @@ VTUFILE=test.vtu
 all: compile run paraview
 
 compile: VTK $(OBJS)
-	#gfortran ${FFILE}.f90 ${OBJS} $(FLAGS) -o $(FFILE).exec
 	gfortran $(FFILE).f90 ./Lib_VTK_IO/obj/*.o *.o $(FLAGS) -o $(FFILE).exec
 
 file: 
@@ -29,10 +28,6 @@ VTK:
 paraview:
 	paraview $(VTUFILE) &
 
-.SUFFIXES:
-.SUFFIXES: .f90 .o
-.f90.o:
-	gfortran $< $(FLAGS) -c -o $@
 
 clean: 
 	rm -f *.mod
@@ -40,3 +35,10 @@ clean:
 	rm -f *.o
 	rm -f *.txt
 	rm -rf output
+
+.SUFFIXES:
+.SUFFIXES: .f90 .o .F
+.f90.o:
+	gfortran $< $(FLAGS) -c -o $@
+.F.o:
+	gfortran $< $(FLAGS) -c -o $@
