@@ -13,17 +13,24 @@ CONTAINS
 !*************************************************************************************!
 ! Generate Strands
 !*************************************************************************************!
-SUBROUTINE strandGen(triangles,nTri,nSurfNode,normals,clip,strandDist,wSpace,smooth,nodeNormals)
+SUBROUTINE strandGen(triangles,nTri,nSurfNode,normals,nmax,&
+    strandDist,wallSpacing,smooth,nodeNormals,xs,&
+    nPtsPerStrand,stretchRatio,strandLength)
 REAL*4,DIMENSION(:,:),INTENT(IN) :: triangles,normals
-INTEGER,INTENT(IN) :: nTri,clip,strandDist
+INTEGER,INTENT(IN) :: nTri,strandDist
 INTEGER,INTENT(INOUT) :: nSurfNode
-REAL,INTENT(IN) :: wSpace,smooth
+REAL,INTENT(IN) :: wallSpacing,smooth
 
 INTEGER :: n,i,k,kk,p,share
 INTEGER,DIMENSION(nSurfNode) :: nSurT,nNum   !! Number of Surrounding Triangles, Node Number
 INTEGER*4,DIMENSION(nTri,3) :: surfElem      !! Tag for surface nodes
 REAL*4,DIMENSION(3,nTri*5)  :: nodesT        !! Node Locations
 REAL*4,DIMENSION(3,nTri),INTENT(OUT) :: nodeNormals   !! Cumulative area for surrounding triangles
+INTEGER,INTENT(IN) :: nmax
+REAL,DIMENSION(nmax),INTENT(INOUT) :: xs
+INTEGER,INTENT(IN) :: nPtsPerStrand
+REAL,INTENT(IN) :: stretchRatio,strandLength
+
 
 !! Determine surface nodes, and shared nodes from triangles
 
@@ -60,7 +67,81 @@ END DO
 
 nodeNormals(:,:) = nodeNormals(:,:)/(sqrt(nodeNormals(:,:)*nodeNormals(:,:)))
 
+CALL strand1dDist (0,nmax,xs,nPtsPerStrand,stretchRatio,strandDist,strandLength,wallSpacing)
+
 END SUBROUTINE strandGen
+!*************************************************************************************!
+! Output Strand Grid to VTS file using the following subroutine
+!*************************************************************************************!
+SUBROUTINE output_strand(nCell,nNode,nTri,x_loc,y_loc,z_loc,conn,offS,nPtsPerStrand,nodeNormals,xs)
+INTEGER :: nCell,nNode,nPtsPerStrand,nTri
+INTEGER, DIMENSION(nNode*(nPtsPerstrand-1)) :: new_conn
+REAL,INTENT(IN),DIMENSION(:) :: x_loc, y_loc, z_loc, xs
+REAL,ALLOCATABLE,DIMENSION(:) :: new_x_loc, new_y_loc, new_z_loc
+INTEGER,INTENT(IN),DIMENSION(:) :: conn
+INTEGER,INTENT(IN),DIMENSION(:,:) :: nodeNormals
+INTEGER,ALLOCATABLE,INTENT(INOUT),DIMENSION(:) :: offS
+INTEGER*1,DIMENSION(nCell) :: cellT
+INTEGER :: E_IO
+INTEGER :: n,m,r
+
+cellT = 13
+!! Create new X,Y, and Z Location Arrays
+ALLOCATE(new_x_loc(nNode*nPtsPerStrand))
+ALLOCATE(new_y_loc(nNode*nPtsPerStrand))
+ALLOCATE(new_z_loc(nNode*nPtsPerStrand))
+
+!! Sprout the strands one layer at a time over the whole mesh, continue until all layers have been added
+DO n = 1, nPtsPerStrand
+    DO m = 1, nNode
+        !IF (n == 1) THEN
+        !new_x_loc((n-1)*nNode + m) = x_loc(m)
+        !new_y_loc((n-1)*nNode + m) = y_loc(m)
+        !new_z_loc((n-1)*nNode + m) = z_loc(m)
+        !ELSE
+        new_x_loc((n-1)*nNode + m) = x_loc(m)+nodeNormals(1,n)*xs(n)
+        new_y_loc((n-1)*nNode + m) = y_loc(m)+nodeNormals(2,n)*xs(n)
+        new_z_loc((n-1)*nNode + m) = z_loc(m)+nodeNormals(3,n)*xs(n)
+        !END IF
+    END DO
+END DO
+
+!! Create new Connectivity array
+DO n = 1,nPtsPerStrand-1
+    r = 1
+    DO m = 1,nTri
+        new_conn((n-1)*(nTri-1) + r)     = (n-1)*(nNode) + conn((m-1)*3 + 1)
+        new_conn((n-1)*(nTri-1) + r + 1) = (n-1)*(nNode) + conn((m-1)*3 + 2)
+        new_conn((n-1)*(nTri-1) + r + 2) = (n-1)*(nNode) + conn((m-1)*3 + 3)
+        new_conn((n-1)*(nTri-1) + r + 3) = n    *(nNode) + conn((m-1)*3 + 1)
+        new_conn((n-1)*(nTri-1) + r + 4) = n    *(nNode) + conn((m-1)*3 + 2)
+        new_conn((n-1)*(nTri-1) + r + 5) = n    *(nNode) + conn((m-1)*3 + 3)
+        r = r + 6
+    END DO
+END DO
+
+ALLOCATE(offS(nCell))
+DO n = 1,nCell
+    offS(n) = 6*n
+END DO
+
+        WRITE(*,*) 'Writing file strand.vtu'
+        E_IO = VTK_INI_XML_write(fformat='binary', filename='strand.vtu',mesh_topology='UnstructuredGrid')
+        E_IO = VTK_FLD_XML(fld_action='open')
+        E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
+        E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
+        E_IO = VTK_FLD_XML(fld_action='close')
+        E_IO = VTK_GEO_XML_WRITE(nNode,nCell,new_x_loc,new_y_loc,new_z_loc)
+        E_IO = VTK_CON_XML(&
+            NC        = nCell     ,&
+            connect   = new_conn  ,&
+            offset    = offS      ,&
+            cell_type = cellT     )
+        E_IO = VTK_GEO_XML_WRITE()
+        E_IO = VTK_END_XML()
+
+END SUBROUTINE output_strand
+
 
 !*************************************************************************************!
 ! Output to VTS file using the following subroutine
@@ -82,7 +163,7 @@ DO n = 1,nCell
 END DO
 
         WRITE(*,*) 'Writing file mesh.vtu'
-        E_IO = VTK_INI_XML_write(fformat='binary', filename='test.vtu',mesh_topology='UnstructuredGrid')
+        E_IO = VTK_INI_XML_write(fformat='ascii', filename='test.vtu',mesh_topology='UnstructuredGrid')
         E_IO = VTK_FLD_XML(fld_action='open')
         E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
         E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
