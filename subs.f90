@@ -13,109 +13,101 @@ CONTAINS
 !*************************************************************************************!
 ! Generate Strands
 !*************************************************************************************!
-SUBROUTINE strandGen(triangles,nTri,nSurfNode,normals,nmax,&
+SUBROUTINE strandGen(nTri,nSurfNode,normals,nmax,conn,&
     strandDist,wallSpacing,smooth,nodeNormals,xs,&
     nPtsPerStrand,stretchRatio,strandLength)
-REAL*4,DIMENSION(:,:),INTENT(IN) :: triangles,normals
+REAL*4,DIMENSION(:,:),INTENT(IN) :: normals
 INTEGER,INTENT(IN) :: nTri,strandDist
 INTEGER,INTENT(INOUT) :: nSurfNode
 REAL,INTENT(IN) :: wallSpacing,smooth
 
 INTEGER :: n,i,k,kk,p,share
-INTEGER,DIMENSION(nSurfNode) :: nSurT,nNum   !! Number of Surrounding Triangles, Node Number
-INTEGER*4,DIMENSION(nTri,3) :: surfElem      !! Tag for surface nodes
-REAL*4,DIMENSION(3,nTri*5)  :: nodesT        !! Node Locations
-REAL*4,DIMENSION(3,nTri),INTENT(OUT) :: nodeNormals   !! Cumulative area for surrounding triangles
+INTEGER*4,DIMENSION(nTri,3) :: surfElem                     !! Tag for surface nodes
+REAL*4,DIMENSION(3,nTri*5)  :: nodesT                       !! Node Locations
+!REAL*4,DIMENSION(:,:),INTENT(IN) :: surfX                  !! Node Locations
+REAL*4,DIMENSION(3,nSurfNode),INTENT(OUT) :: nodeNormals    !! Normals for each node 
 INTEGER,INTENT(IN) :: nmax
+INTEGER,DIMENSION(:),INTENT(IN) :: conn
 REAL,DIMENSION(nmax),INTENT(INOUT) :: xs
 INTEGER,INTENT(IN) :: nPtsPerStrand
 REAL,INTENT(IN) :: stretchRatio,strandLength
+REAL,DIMENSION(nTri) :: temp
+
+!WRITE(*,*) nTri,strandDist,nSurfNode,wallspacing,smooth,nmax,&
+    !conn,nPtsPerStrand,stretchRatio,strandLength
 
 
-!! Determine surface nodes, and shared nodes from triangles
+!! Calculate nodeNormals from cell normals
 
-nSurT = 1
 nodeNormals  = 0.
-
 i = 1
-nSurfNode = 3
-k = 0;
-DO n = 1,ntri
-   DO p = 1,3
-      share = 0 
-      DO kk = 1,nSurfNode
-         IF ((abs(nodesT(1,kk) - triangles(1,i)) < 1.e-13) .AND. &
-             (abs(nodesT(2,kk) - triangles(2,i)) < 1.e-13) .AND. &
-             (abs(nodesT(3,kk) - triangles(3,i)) < 1.e-13)) THEN
-            share = kk
-            nSurT(kk) = nSurT(kk) + 1
-            nodeNormals(:,kk) = nodeNormals(:,kk) + normals(:,kk)
-            EXIT
-         END IF
-      END DO
-      IF (share > 0) THEN
-         surfElem(n,p) = share
-      ELSE
-         k             = k+1 
-         nodesT(:,k)   = triangles(:,i)
-         surfElem(n,p) = k !1-based
-      END IF
-      i = i+1
-   END DO
-   nSurfNode = k 
+DO n = 1,nTri
+    nodeNormals(:,conn(i  )) = nodeNormals(:,conn(i  )) + normals(:,n)
+    nodeNormals(:,conn(i+1)) = nodeNormals(:,conn(i+1)) + normals(:,n)
+    nodeNormals(:,conn(i+2)) = nodeNormals(:,conn(i+2)) + normals(:,n)
+    i = i + 3
 END DO
 
-nodeNormals(:,:) = nodeNormals(:,:)/(sqrt(nodeNormals(:,:)*nodeNormals(:,:)))
+temp = sqrt(nodeNormals(1,:)*nodeNormals(1,:) + nodeNormals(2,:)*nodeNormals(2,:) + nodeNormals(3,:)*nodeNormals(3,:))
+
+nodeNormals(1,:) = nodeNormals(1,:)/temp(:)
+nodeNormals(2,:) = nodeNormals(2,:)/temp(:)
+nodeNormals(3,:) = nodeNormals(3,:)/temp(:)
 
 CALL strand1dDist (0,nmax,xs,nPtsPerStrand,stretchRatio,strandDist,strandLength,wallSpacing)
 
 END SUBROUTINE strandGen
+
 !*************************************************************************************!
 ! Output Strand Grid to VTS file using the following subroutine
 !*************************************************************************************!
-SUBROUTINE output_strand(nCell,nNode,nTri,x_loc,y_loc,z_loc,conn,offS,nPtsPerStrand,nodeNormals,xs)
-INTEGER :: nCell,nNode,nPtsPerStrand,nTri
-INTEGER, DIMENSION(nNode*(nPtsPerstrand-1)) :: new_conn
-REAL,INTENT(IN),DIMENSION(:) :: x_loc, y_loc, z_loc, xs
+SUBROUTINE output_strand(nSurfNode,nTri,x_loc,y_loc,z_loc,conn,nPtsPerStrand,nodeNormals,xs)
+INTEGER,INTENT(IN) :: nSurfNode,nPtsPerStrand,nTri
+INTEGER, DIMENSION(6*nTri*(nPtsPerstrand-1)) :: new_conn
+REAL,INTENT(IN),DIMENSION(:) :: x_loc, y_loc, z_loc
+REAL,INTENT(IN),DIMENSION(nPtsPerStrand) :: xs
 REAL,ALLOCATABLE,DIMENSION(:) :: new_x_loc, new_y_loc, new_z_loc
-INTEGER,INTENT(IN),DIMENSION(:) :: conn
-INTEGER,INTENT(IN),DIMENSION(:,:) :: nodeNormals
-INTEGER,ALLOCATABLE,INTENT(INOUT),DIMENSION(:) :: offS
-INTEGER*1,DIMENSION(nCell) :: cellT
+INTEGER,INTENT(IN),DIMENSION(3*nTri) :: conn
+REAL*4,INTENT(IN),DIMENSION(3,nSurfNode) :: nodeNormals
+INTEGER,ALLOCATABLE,DIMENSION(:) :: offS
+INTEGER*1,ALLOCATABLE,DIMENSION(:) :: cellT
 INTEGER :: E_IO
-INTEGER :: n,m,r
+INTEGER :: n,m,r,nCell
 
-cellT = 13
 !! Create new X,Y, and Z Location Arrays
-ALLOCATE(new_x_loc(nNode*nPtsPerStrand))
-ALLOCATE(new_y_loc(nNode*nPtsPerStrand))
-ALLOCATE(new_z_loc(nNode*nPtsPerStrand))
+ALLOCATE(new_x_loc(nSurfNode*nPtsPerStrand))
+ALLOCATE(new_y_loc(nSurfNode*nPtsPerStrand))
+ALLOCATE(new_z_loc(nSurfNode*nPtsPerStrand))
 
+nCell = nTri*(nPtsPerStrand-1)
+ALLOCATE(cellT(nCell))
+cellT = 13
 !! Sprout the strands one layer at a time over the whole mesh, continue until all layers have been added
 DO n = 1, nPtsPerStrand
-    DO m = 1, nNode
+    DO m = 1, nSurfNode
         !IF (n == 1) THEN
-        !new_x_loc((n-1)*nNode + m) = x_loc(m)
-        !new_y_loc((n-1)*nNode + m) = y_loc(m)
-        !new_z_loc((n-1)*nNode + m) = z_loc(m)
+        !new_x_loc((n-1)*nSurfNode + m) = x_loc(m)
+        !new_y_loc((n-1)*nSurfNode + m) = y_loc(m)
+        !new_z_loc((n-1)*nSurfNode + m) = z_loc(m)
         !ELSE
-        new_x_loc((n-1)*nNode + m) = x_loc(m)+nodeNormals(1,n)*xs(n)
-        new_y_loc((n-1)*nNode + m) = y_loc(m)+nodeNormals(2,n)*xs(n)
-        new_z_loc((n-1)*nNode + m) = z_loc(m)+nodeNormals(3,n)*xs(n)
+        new_x_loc((n-1)*nSurfNode + m) = x_loc(m)+nodeNormals(1,n)*xs(n)
+        new_y_loc((n-1)*nSurfNode + m) = y_loc(m)+nodeNormals(2,n)*xs(n)
+        new_z_loc((n-1)*nSurfNode + m) = z_loc(m)+nodeNormals(3,n)*xs(n)
         !END IF
     END DO
 END DO
 
 !! Create new Connectivity array
+!!      Add one strand layer at a time
 DO n = 1,nPtsPerStrand-1
     r = 1
     DO m = 1,nTri
-        new_conn((n-1)*(nTri-1) + r)     = (n-1)*(nNode) + conn((m-1)*3 + 1)
-        new_conn((n-1)*(nTri-1) + r + 1) = (n-1)*(nNode) + conn((m-1)*3 + 2)
-        new_conn((n-1)*(nTri-1) + r + 2) = (n-1)*(nNode) + conn((m-1)*3 + 3)
-        new_conn((n-1)*(nTri-1) + r + 3) = n    *(nNode) + conn((m-1)*3 + 1)
-        new_conn((n-1)*(nTri-1) + r + 4) = n    *(nNode) + conn((m-1)*3 + 2)
-        new_conn((n-1)*(nTri-1) + r + 5) = n    *(nNode) + conn((m-1)*3 + 3)
+        new_conn((n-1)*(nTri-1) + r)     = (n-1)*(nSurfNode) + conn((m-1)*3 + 1)
+        new_conn((n-1)*(nTri-1) + r + 1) = (n-1)*(nSurfNode) + conn((m-1)*3 + 2)
+        new_conn((n-1)*(nTri-1) + r + 2) = (n-1)*(nSurfNode) + conn((m-1)*3 + 3)
+        new_conn((n-1)*(nTri-1) + r + 3) = n    *(nSurfNode) + conn((m-1)*3 + 1)
+        new_conn((n-1)*(nTri-1) + r + 4) = n    *(nSurfNode) + conn((m-1)*3 + 2)
+        new_conn((n-1)*(nTri-1) + r + 5) = n    *(nSurfNode) + conn((m-1)*3 + 3)
         r = r + 6
     END DO
 END DO
@@ -131,7 +123,7 @@ END DO
         E_IO = VTK_FLD_XML(fld=0.e1,fname='TIME')
         E_IO = VTK_FLD_XML(fld=1,fname='CYCLE')
         E_IO = VTK_FLD_XML(fld_action='close')
-        E_IO = VTK_GEO_XML_WRITE(nNode,nCell,new_x_loc,new_y_loc,new_z_loc)
+        E_IO = VTK_GEO_XML_WRITE(nSurfNode,nCell,new_x_loc,new_y_loc,new_z_loc)
         E_IO = VTK_CON_XML(&
             NC        = nCell     ,&
             connect   = new_conn  ,&
@@ -242,19 +234,20 @@ END SUBROUTINE InputRead
 ! Read STL and Allocate
 !*************************************************************************************!
 
-SUBROUTINE stlRead(surfX,nSurfNode,surfElem,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
+SUBROUTINE stlRead(surfX,nSurfNode,surfElem,normals,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal,ntri)
 
 CHARACTER header*80
 CHARACTER, INTENT(IN) :: filename*80
 INTEGER*2 padding
-INTEGER*4 ntri,iunit,nSurfNode,k,i,n,p,kk,share,nSurfElem
-REAL*4,ALLOCATABLE,DIMENSION(:,:) :: normals,triangles,nodesT
+INTEGER*4 iunit,nSurfNode,k,i,n,p,kk,share,nSurfElem
+REAL*4,ALLOCATABLE,DIMENSION(:,:) :: triangles,nodesT
+REAL*4,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: normals
 INTEGER*4,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: surfElem
 INTEGER*4,ALLOCATABLE,DIMENSION(:),INTENT(OUT) :: conn 
 REAL,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: surfX
 INTEGER,ALLOCATABLE,DIMENSION(:),INTENT(OUT) :: surfElemTag,surfOrder
 REAL,ALLOCATABLE,DIMENSION(:,:),INTENT(OUT) :: bndNormal
-INTEGER,INTENT(OUT) :: nBndComp,nBndElem
+INTEGER,INTENT(OUT) :: nBndComp,nBndElem,ntri
 
 PRINT*,
 PRINT*, " Reading in .stl Mesh "
@@ -337,7 +330,6 @@ END DO
 ! deallocate unnecessary data
 DEALLOCATE(nodesT)
 DEALLOCATE(triangles)
-DEALLOCATE(normals)
 
 ALLOCATE(surfOrder(nSurfElem))
 ALLOCATE(surfElemTag(nSurfElem))

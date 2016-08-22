@@ -6,13 +6,13 @@ FFILE=set3d
 #FLAGS=-O3 -fdefault-real-8
 #FLAGS=-Wall -fcheck='all' -ffixed-line-length-none -fdefault-real-8 -O3 -J./Lib_VTK_IO/mod/
 #FLAGS=-Wall -Wextra -Wconversion -fcheck='all' -ffixed-line-length-none -fdefault-real-8 -O3 -J ./Lib_VTK_IO/mod/
-FLAGS=-ffixed-line-length-none -fdefault-real-8 -J ./Lib_VTK_IO/mod/
+FLAGS=-ffixed-line-length-none -fdefault-real-8 -J ./Lib_VTK_IO/mod/ -g
 #STLFILE=twoCube10.stl
-STLFILE=cube5.stl
+STLFILE=cube20.stl
 #STLFILE=Ellipsoid2_coarse.stl
 VTUFILE=test.vtu
 
-all: compile run paraview
+all: clean compile run
 
 compile: VTK $(OBJS)
 	gfortran $(FFILE).f90 ./Lib_VTK_IO/obj/*.o *.o $(FLAGS) -o $(FFILE).exec
@@ -36,6 +36,7 @@ clean:
 	rm -f *.o
 	rm -f *.txt
 	rm -rf output
+	rm -f *.vtu
 
 .SUFFIXES:
 .SUFFIXES: .f90 .o .F

@@ -40,12 +40,18 @@ REAL,ALLOCATABLE,DIMENSION(:,:) :: centroid,surfX,bndNormal,gradPhiSurf,surfXN,s
 CHARACTER(LEN=1) :: lf=char(10)
 CHARACTER(LEN=1024) :: extent,origin,spacing,coffset
 INTEGER*4,ALLOCATABLE,DIMENSION(:,:) :: surfElem
+REAL*4,ALLOCATABLE,DIMENSION(:,:) :: normals
 INTEGER,ALLOCATABLE,DIMENSION(:)   :: conn
 INTEGER,ALLOCATABLE,DIMENSION(:)   :: offS_mesh
 INTEGER,ALLOCATABLE,DIMENSION(:) :: surfElemTag,surfOrder
 CHARACTER :: filename*80,meshname*80,endname*80,filetype*80
-INTEGER*4 :: nSurfNode,k,i,n,p,kk,share,nSurfElem,length
+INTEGER*4 :: nSurfNode,k,i,n,p,kk,share,nSurfElem,length,nTri
 REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: gridX,grad2Phi,gradMixPhi,gradPhi
+
+INTEGER :: nPtsPerStrand,nmax,strandDist
+REAL :: wallSpacing,smooth,stretchRatio,strandLength
+REAL*4,ALLOCATABLE,DIMENSION(:,:) :: nodeNormals
+REAL,ALLOCATABLE,DIMENSION(:) :: xn
 
 !*************************************************************************************!
 ! Set Initialization and Import Data
@@ -68,9 +74,9 @@ IF (filetype == 'stl') THEN
    ! remove filetyple and add .s3d
    meshname = filename(1:length-len_trim(filetype)-1)//endname
 
-   CALL stlRead(surfX,nSurfNode,surfElem,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal)
+   CALL stlRead(surfX,nSurfNode,surfElem,normals,conn,filename,nSurfElem,surfElemTag,surfOrder,nBndComp,nBndElem,bndNormal,nTri)
 
-   CALL output_mesh(nSurfElem,nSurfNode,surfX(:,1),surfX(:,2),surfX(:,3),conn,offS_mesh)
+   !!CALL output_mesh(nSurfElem,nSurfNode,surfX(:,1),surfX(:,2),surfX(:,3),conn,offS_mesh)
 
 ELSEIF (filetype == 's3d') THEN
 
@@ -142,7 +148,7 @@ ddy = maxY-minY
 ddz = maxZ-minZ
 
 ! set dx
-dx = 0.025
+dx = 0.05
 
 ! define Cartesian grid
 nx = ceiling((maxX-minX)/dx)+1;
@@ -306,7 +312,7 @@ iter = 10000 !1500 ! 10000
 dxx = dx/sqrt(ddx*ddx+ddy*ddy+ddz*ddz)
 
 ! time step
-CFL = 1.
+CFL = .5
 h = CFL*dxx
 
 
@@ -393,7 +399,7 @@ surfXN = surfX
 !*************************************************************************************!
 
 iter = 10000 !20000
-CFL = .01
+CFL = .05
 h1 = CFL*dxx
 
 DO n = 1,iter
@@ -513,7 +519,7 @@ order1 = 2
 DO i = 0,nx
    DO j = 0,ny
       DO k = 0,nz
-         CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
+         !!CALL firstDeriv(i,j,k,nx,ny,nz,dx,phi,phiX,phiY,phiZ,order1,gM,gradPhi)
          gradPhiMag(i,j,k) = gM
       END DO
    END DO
@@ -560,7 +566,7 @@ CLOSE(sUnit)
 iter = 2000
 
 ! time step
-CFL = .001
+CFL = .005
 h = CFL*dxx
 
 CALL reinit(phi,gradPhi,gradPhiMag,nx,ny,nz,iter,dx,h)
@@ -571,41 +577,64 @@ CALL reinit(phi,gradPhi,gradPhiMag,nx,ny,nz,iter,dx,h)
 
 ! Robbie, add your strand generation stuff here.
 
+WRITE(*,*) "Made it to Strand Stuff"
+
+nPtsPerStrand = 3
+nmax = 3
+wallSpacing = 1.e-2
+smooth = 0.
+stretchRatio = 1.1
+
+ALLOCATE(nodeNormals(3,nSurfNode))
+ALLOCATE(xn(nmax))
+
+strandDist = 1
+strandLength = 1.5
+
+CALL strandGen(nTri,nSurfNode,normals,nmax,conn,&
+    strandDist,wallSpacing,smooth,nodeNormals,xn,&
+    nPtsPerStrand,stretchRatio,strandLength)
+
+WRITE(*,*) xn
+CALL output_strand(nSurfNode,nTri,surfX(:,1),surfX(:,2),surfX(:,3),conn,nPtsPerStrand,nodeNormals,xn)
+STOP
+
 !*************************************************************************************!
 ! Print Out .S3D Format
 !*************************************************************************************!
 
 ! Set array to 0-based
 
-DO k = 1,nSurfElem
-   DO n = 1,3
-      surfElem(k,n) = surfElem(k,n)-1
-   END DO
-END DO
-
-filename = "cube.mesh"
-iu = 14
-
-! write to mesh file
-
-OPEN(iu,FILE=meshname,STATUS='replace',FORM='formatted')
-WRITE(iu,*)nSurfElem,nSurfNode,nBndElem,nBndComp
-DO k=1,nSurfElem
-   WRITE(iu,*)surfOrder(k),surfElem(k,:),surfElemTag(k)
-END DO
-DO n=1,nSurfNode
-   WRITE(iu,*)surfXN(n,:)
-END DO
-DO n=1,nBndComp
-   WRITE(iu,*)bndNormal(n,:)
-END DO
-CLOSE(iu)
-
-WRITE(*,'(A,A)')  'Successfully wrote: ', filename
+!DO k = 1,nSurfElem
+!   DO n = 1,3
+!      surfElem(k,n) = surfElem(k,n)-1
+!   END DO
+!END DO
+!
+!filename = "cube.mesh"
+!iu = 14
+!
+!! write to mesh file
+!
+!OPEN(iu,FILE=meshname,STATUS='replace',FORM='formatted')
+!WRITE(iu,*)nSurfElem,nSurfNode,nBndElem,nBndComp
+!DO k=1,nSurfElem
+!   WRITE(iu,*)surfOrder(k),surfElem(k,:),surfElemTag(k)
+!END DO
+!DO n=1,nSurfNode
+!   WRITE(iu,*)surfXN(n,:)
+!END DO
+!DO n=1,nBndComp
+!   WRITE(iu,*)bndNormal(n,:)
+!END DO
+!CLOSE(iu)
+!
+!WRITE(*,'(A,A)')  'Successfully wrote: ', filename
 
 !*************************************************************************************!
 ! Deallocate
 !*************************************************************************************!
+
 
 DEALLOCATE(phi, &
            gradPhi, &
